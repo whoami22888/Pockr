@@ -51,6 +51,14 @@ class VmManager(private val context: Context) {
             stopVm()
         }
 
+        val userImageBeforeExtraction = File(vmDir, "user.qcow2").exists()
+        val baseBeforeExtraction = File(vmDir, "base.qcow2").exists()
+        if (userImageBeforeExtraction && !baseBeforeExtraction) {
+            throw IllegalStateException(
+                "The persistent VM overlay exists but its base image is missing. " +
+                    "Restore the matching base image before starting. User data has not been deleted."
+            )
+        }
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
             Log.d(TAG, "Assets not ready, extracting...")
@@ -66,17 +74,14 @@ class VmManager(private val context: Context) {
 
         val baseImage = File(vmDir, "base.qcow2")
         val userImage = File(vmDir, "user.qcow2")
-        // Recreate the overlay only when base.qcow2 was freshly extracted (content
-        // changed) or the overlay does not exist yet.  Keeping a persistent overlay
-        // means Docker image layers pulled in previous sessions survive VM restarts,
-        // so subsequent pulls are instant.  Ext4 journaling handles unclean-shutdown
-        // recovery automatically at the next boot.
-        if (freshExtraction || !userImage.exists()) {
-            Log.d(TAG, "Creating fresh user.qcow2 (freshExtraction=$freshExtraction)")
-            userImage.delete()
+        // The extraction marker is not a base-image version signal: upgrades can
+        // change that marker without changing base.qcow2. Never delete the user's
+        // writable overlay simply because a bootstrap asset was re-extracted.
+        if (!userImage.exists()) {
+            Log.d(TAG, "Creating user.qcow2 (none exists)")
             createUserImage(userImage.absolutePath, baseImage.absolutePath)
         } else {
-            Log.d(TAG, "Reusing existing user.qcow2 (Docker image cache preserved)")
+            Log.d(TAG, "Reusing existing user.qcow2 (Docker images and data preserved)")
         }
 
         val cmd = buildQemuCommand(
@@ -320,7 +325,10 @@ class VmManager(private val context: Context) {
         cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2")
         cmd += listOf("-device", "virtio-blk-pci,drive=user")
 
-        cmd += listOf("-netdev", "user,id=net0,hostfwd=tcp::7080-:7080")
+        // Both guest APIs are exposed only to the Android handset itself, not the LAN.
+        // 7080 = Pockr management; 8080 = opt-in Jarvis FastAPI gateway.
+        cmd += listOf("-netdev",
+            "user,id=net0,hostfwd=tcp:127.0.0.1:7080-:7080,hostfwd=tcp:127.0.0.1:8080-:8080")
         cmd += listOf("-device", "virtio-net-pci,netdev=net0,romfile=")
 
         cmd += listOf("-fw_cfg", "name=opt/api_token,string=$token")
