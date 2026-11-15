@@ -1,0 +1,68 @@
+name: Pockr Android runtime APK
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'lib/**'
+      - 'guest/**'
+      - 'scripts/**'
+      - 'docker/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/pockr-android.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'lib/**'
+      - 'guest/**'
+      - 'scripts/**'
+      - 'docker/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/pockr-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-pockr-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - name: Build generated Alpine ARM64 runtime disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/build_alpine_base.sh
+          test -s android/app/src/main/assets/vm/base.qcow2.gz
+          gzip -t android/app/src/main/assets/vm/base.qcow2.gz
+          sha256sum android/app/src/main/assets/vm/base.qcow2.gz
+      - name: Build Pockr Android debug APK using project Docker builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/build_apk.sh debug
+      - name: Verify APK contains complete VM and native QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          apk = Path("build/pockr-debug.apk")
+          assert apk.is_file() and apk.stat().st_size > 0
+          with ZipFile(apk) as z:
+              names = z.namelist()
+              assert any(s.endswith("vm/base.qcow2.gz") or s.endswith("vm/base.qcow2") for s in names), "Base Alpine disk missing"
+              assert any(s.endswith("lib/arm64-v8a/libqemu.so") for s in names), "QEMU binary missing"
+              assert z.testzip() is None, "APK contains a corrupt ZIP member"
+          print(f"APK structurally valid: {apk.stat().st_size:,} bytes")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pockr-jarvis-arm64-debug-apk
+          path: build/pockr-debug.apk
+          if-no-files-found: error
+          retention-days: 7
