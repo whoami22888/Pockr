@@ -55,6 +55,11 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getBootLog" -> {
+                        // Works even when Docker and port 7080 are unavailable.
+                        result.success(vmManager.getBootLog())
+                    }
+
                     "getVmStatus" -> {
                         // Lightweight — no I/O, safe on main thread
                         try {

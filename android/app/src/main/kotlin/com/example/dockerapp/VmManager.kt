@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.zip.GZIPInputStream
 
@@ -13,6 +14,24 @@ class VmManager(private val context: Context) {
     private val TAG = "VmManager"
     @Volatile private var vmProcess: Process? = null
     @Volatile private var isRunning = false
+    private val bootLogLock = Any()
+    private val bootLines = ArrayDeque<String>()
+
+    /** Guest serial output remains available even when the HTTP API never starts. */
+    fun getBootLog(): String = synchronized(bootLogLock) {
+        if (bootLines.isEmpty()) "No QEMU console output has been captured."
+        else bootLines.joinToString("\n")
+    }
+
+    private fun recordBootLine(line: String) {
+        val safe = line.replace(token, "[redacted]")
+        synchronized(bootLogLock) {
+            if (bootLines.size >= 200) bootLines.removeFirst()
+            bootLines.addLast(safe)
+        }
+        Log.d("QEMU", safe)
+    }
+
 
     private val filesDir: File get() = context.filesDir
     private val vmDir: File get() = File(filesDir, "vm")
@@ -94,19 +113,20 @@ class VmManager(private val context: Context) {
 
         Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>")}")
 
-        vmProcess = ProcessBuilder(cmd).apply {
-            // Add nativeLibDir to LD_LIBRARY_PATH for any shared libs QEMU needs
+        synchronized(bootLogLock) { bootLines.clear() }
+        // Retain this process locally: restarts must not rebind the previous log reader.
+        val process = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
             redirectErrorStream(true)
         }.start()
-
+        vmProcess = process
         isRunning = true
+        recordBootLine("QEMU launched. Waiting for Alpine console...")
 
-        // Drain QEMU stdout/stderr in background to prevent pipe buffer deadlock
         Thread {
             try {
-                vmProcess?.inputStream?.bufferedReader()?.forEachLine { line ->
-                    Log.d("QEMU", line)
+                process.inputStream.bufferedReader().forEachLine { line ->
+                    recordBootLine(line)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "QEMU output reader closed: ${e.message}")

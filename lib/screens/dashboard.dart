@@ -44,6 +44,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(height: 12),
                           _buildErrorCard(vmState.errorMessage!),
                         ],
+                        if (vmState.status == 'running' && !vmState.isHealthy) ...[
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _showBootLog,
+                            icon: const Icon(Icons.article_outlined),
+                            label: const Text('View VM boot log'),
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         _buildQuickActions(vmState),
                         const SizedBox(height: 20),
@@ -56,6 +64,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showBootLog() async {
+    final logs = await VmPlatform.getBootLog();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('QEMU / Alpine boot log'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 360,
+          child: SingleChildScrollView(child: SelectableText(logs)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -127,7 +157,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isRunning = vmState.status == 'running';
     final isStarting = vmState.status == 'starting';
     final color = isRunning
-        ? const Color(0xFF00C896)
+        ? vmState.isHealthy
+            ? const Color(0xFF00C896)
+            : const Color(0xFFFF9500)
         : isStarting
             ? const Color(0xFFFF9500)
             : const Color(0xFF6B7280);
@@ -201,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   isRunning
                       ? vmState.isHealthy
                           ? 'API healthy at localhost:7080'
-                          : 'Booting Alpine — first boot takes ~5 min, please wait'
+                          : 'Alpine API not responding. Tap View VM boot log below.'
                       : isStarting
                           ? 'Extracting assets and launching QEMU...'
                           : 'Virtual machine is not running',

@@ -33,6 +33,11 @@ class VmPlatform {
     }
   }
 
+  static Future<String> getBootLog() async {
+    final String? result = await platform.invokeMethod<String>('getBootLog');
+    return result ?? '';
+  }
+
   static Future<String> getVmStatus() async {
     try {
       final String result = await platform.invokeMethod('getVmStatus');
