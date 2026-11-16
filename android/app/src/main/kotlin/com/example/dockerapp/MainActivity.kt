@@ -80,6 +80,17 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "rebuildGuestStorage" -> executor.execute {
+                        try {
+                            vmManager.rebuildGuestStorage()
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("GUEST_RESET_FAILED", e.message, null)
+                            }
+                        }
+                    }
+
                     "getBootLog" -> {
                         // Works even when Docker and port 7080 are unavailable.
                         result.success(vmManager.getBootLog())

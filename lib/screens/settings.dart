@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'about.dart';
 import '../services/vm_resource_profile.dart';
+import '../services/vm_platform.dart';
+import 'package:provider/provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,6 +17,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _ramMb = 2048;
   String _performanceProfile = 'standard';
   bool _autoStart = false;
+  bool _resetBusy = false;
+
+  Future<void> _confirmRebuildVm() async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rebuild Alpine VM?'),
+        content: const Text(
+          'This permanently deletes the virtual machine, Docker containers, '
+          'images, volumes and files inside Alpine. Android app settings '
+          'remain unchanged. The VM must be stopped first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Erase VM and rebuild'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    setState(() => _resetBusy = true);
+    try {
+      await VmPlatform.rebuildGuestStorage();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('VM reset. Start the engine to extract the new Alpine image.'),
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('VM reset failed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _resetBusy = false);
+    }
+  }
 
   @override
   void initState() {
@@ -159,6 +202,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               });
             },
           ),
+          const Divider(),
+          Builder(builder: (context) {
+            final vm = context.watch<VmState>();
+            return ListTile(
+              leading: const Icon(Icons.settings_backup_restore, color: Colors.orange),
+              title: const Text('Rebuild Alpine VM'),
+              subtitle: Text(vm.status == 'running'
+                  ? 'Stop the engine first. Deletes all guest files and containers.'
+                  : 'Re-extract the updated Alpine image; deletes only VM data.'),
+              enabled: !_resetBusy && vm.status != 'running' && vm.status != 'starting',
+              onTap: _confirmRebuildVm,
+            );
+          }),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.info_outline),

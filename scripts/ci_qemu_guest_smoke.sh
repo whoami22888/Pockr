@@ -64,6 +64,22 @@ if [[ "$ready" -ne 1 ]]; then
     exit 1
 fi
 
+# Verify the installed guest root filesystem identifies its packaged version.
+curl -fsS --max-time 15 \
+  -H 'Authorization: Bearer ci-test-only' \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"cat /etc/pockr_guest_runtime_version"}' \
+  "http://127.0.0.1:$PORT/vm/exec" > /tmp/pockr-guest-version.json
+python3 - <<'PY'
+import json
+from pathlib import Path
+record = json.loads(Path("/tmp/pockr-guest-version.json").read_text())
+expected = Path("guest/guest_runtime_version.txt").read_text().strip()
+assert record.get("exitCode") == 0, record
+assert record.get("stdout", "").strip() == expected, (record, expected)
+print("Guest runtime version matches the image packaged in the APK")
+PY
+
 # The management API must remain responsive after Docker is stopped.
 # A guest that reports healthy with no usable diagnostic terminal is invalid.
 echo "Verifying the authenticated management terminal survives Docker failure"

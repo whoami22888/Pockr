@@ -104,6 +104,7 @@ cp /bootstrap_src/docker_health.py /mnt/alpine/bootstrap/
 cp /bootstrap_src/requirements.txt /mnt/alpine/bootstrap/
 cp /bootstrap_src/init_bootstrap.sh /mnt/alpine/bootstrap/
 cp /bootstrap_src/serial_rescue.sh /mnt/alpine/bootstrap/
+cp /bootstrap_src/guest_runtime_version.txt /mnt/alpine/etc/pockr_guest_runtime_version
 cp /bootstrap_src/performance_probe.py /mnt/alpine/bootstrap/
 chmod +x /mnt/alpine/bootstrap/init_bootstrap.sh /mnt/alpine/bootstrap/serial_rescue.sh
 

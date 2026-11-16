@@ -40,6 +40,49 @@ class VmManager(private val context: Context) {
     private val filesDir: File get() = context.filesDir
     private val vmDir: File get() = File(filesDir, "vm")
     private val bootstrapDir: File get() = File(filesDir, "bootstrap")
+    private val guestVersionFile: File get() = File(filesDir, "guest_runtime_version")
+
+    private fun bundledGuestVersion(): String =
+        context.assets.open("vm/guest_runtime_version.txt")
+            .bufferedReader().use { it.readText().trim() }
+                .also { check(it.matches(Regex("[A-Za-z0-9._-]{1,80}"))) {
+                    "Bundled guest image version is invalid"
+                } }
+
+    /** Keep an existing QCOW2 overlay only with the matching root image.
+     * An APK update does not otherwise replace the guest OpenRC services.
+     */
+    private fun checkGuestVersion() {
+        val expected = bundledGuestVersion()
+        val recorded = guestVersionFile.takeIf { it.exists() }?.readText()?.trim()
+        if (File(vmDir, "user.qcow2").exists() && recorded != expected) {
+            throw IllegalStateException(
+                "Installed Alpine VM image is out of date (installed: " +
+                    "${recorded ?: "unknown"}, bundled: $expected). " +
+                    "Stop the VM and use Settings > Rebuild Alpine VM. " +
+                    "This erases VM containers and files only after confirmation."
+            )
+        }
+        if (recorded != expected && File(vmDir, "base.qcow2").exists()) {
+            // No overlay exists: old base image is unreferenced and safe to replace.
+            check(vmDir.deleteRecursively()) { "Unable to remove unused old Alpine base" }
+            check(bootstrapDir.deleteRecursively()) { "Unable to remove old guest bootstrap" }
+            File(filesDir, "assets_extracted.v11").delete()
+            File(filesDir, "assets_extracted.v12").delete()
+        }
+    }
+
+    /** Explicit, user-confirmed reset. Other Android settings remain intact. */
+    @Synchronized
+    fun rebuildGuestStorage() {
+        check(getStatus() != "running") { "Stop the VM engine before rebuilding Alpine" }
+        check(vmDir.deleteRecursively()) { "Could not delete VM disk directory" }
+        check(bootstrapDir.deleteRecursively()) { "Could not delete VM bootstrap directory" }
+        guestVersionFile.delete()
+        File(filesDir, "assets_extracted.v11").delete()
+        File(filesDir, "assets_extracted.v12").delete()
+        Log.i(TAG, "VM storage reset by owner action; Alpine will be re-extracted on next start")
+    }
 
     // QEMU binaries are installed by Android into nativeLibraryDir as .so files.
     // This directory is SELinux-labelled exec_type — safe to execute on Android 10+.
@@ -74,6 +117,7 @@ class VmManager(private val context: Context) {
             stopVm()
         }
 
+        checkGuestVersion()
         val userImageBeforeExtraction = File(vmDir, "user.qcow2").exists()
         val baseBeforeExtraction = File(vmDir, "base.qcow2").exists()
         if (userImageBeforeExtraction && !baseBeforeExtraction) {
@@ -251,8 +295,10 @@ class VmManager(private val context: Context) {
     // -------------------------------------------------------------------------
 
     private fun assetsReady(): Boolean {
-        val marker = File(filesDir, "assets_extracted.v11")
+        val marker = File(filesDir, "assets_extracted.v12")
         return marker.exists()
+            && guestVersionFile.exists()
+            && guestVersionFile.readText().trim() == bundledGuestVersion()
             && resolveQemuBinary().exists()
             && File(vmDir, "base.qcow2").exists()
             && File(vmDir, "vmlinuz-virt").exists()
@@ -291,8 +337,10 @@ class VmManager(private val context: Context) {
                 .onFailure { Log.w(TAG, "Bootstrap asset $name not found") }
         }
 
-        File(filesDir, "assets_extracted.v11").createNewFile()
-        Log.d(TAG, "Assets extracted to $filesDir")
+        // Stamp only after all runtime assets have been extracted successfully.
+        guestVersionFile.writeText(bundledGuestVersion())
+        File(filesDir, "assets_extracted.v12").createNewFile()
+        Log.d(TAG, "Assets extracted to $filesDir, version ${bundledGuestVersion()}")
     }
 
     private fun extractAsset(assetPath: String, dest: File) {

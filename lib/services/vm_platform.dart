@@ -7,6 +7,10 @@ import 'guest_readiness.dart';
 class VmPlatform {
   static const platform = MethodChannel('com.example.dockerapp/vm');
 
+  static Future<void> rebuildGuestStorage() async {
+    await platform.invokeMethod<void>('rebuildGuestStorage');
+  }
+
   static Future<void> startVm() async {
     try {
       await platform.invokeMethod('startVm');
