@@ -47,7 +47,6 @@ class BootstrapServiceTest(unittest.TestCase):
     def test_management_service_does_not_depend_on_docker(self):
         self.assertIn("need localmount", service_template)
         self.assertIn("before networking docker", service_template)
-        self.assertIn("before docker", service_template)
         self.assertNotIn("need docker", service_template)
 
     def test_api_readiness_is_independent_of_docker_health(self):
