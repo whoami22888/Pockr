@@ -24,7 +24,7 @@ docker run --rm \
     alpine:3.19 \
     sh -c '
 set -e
-for f in api_server.py docker_health.py requirements.txt init_bootstrap.sh performance_probe.py; do
+for f in api_server.py docker_health.py requirements.txt init_bootstrap.sh performance_probe.py serial_rescue.sh; do
     if [ -f "/src/$f" ]; then
         cp "/src/$f" "/dst/$f"
         chmod +x "/dst/$f"

@@ -27,12 +27,18 @@ qemu-system-aarch64 \
     -device virtio-blk-pci,drive=user \
     -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$PORT-:7080" \
     -device virtio-net-pci,netdev=net0,romfile= \
-    -display none -serial "file:$QEMU_LOG" \
+    -display none \
+    -chardev "socket,id=rescue,host=127.0.0.1,port=17081,server=on,wait=off,logfile=$QEMU_LOG" \
+    -serial chardev:rescue \
     -kernel "$VM/vmlinuz-virt" -initrd "$VM/initramfs-virt" \
     -append "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=rw modules=virtio_blk,ext4 api_token=ci-test-only quiet" \
     >"$QEMU_ERR" 2>&1 &
 qemu_pid=$!
 trap 'kill "$qemu_pid" 2>/dev/null || true; wait "$qemu_pid" 2>/dev/null || true' EXIT
+
+# Serial client connects before the boot runlevel, not through the HTTP API.
+# A rescue probe must complete without needing Docker or even Python in guest.
+python3 "$ROOT/tests/ci_serial_rescue_guest.py" 127.0.0.1 17081
 start_at="$(date +%s)"
 ready=0
 for i in $(seq 1 360); do

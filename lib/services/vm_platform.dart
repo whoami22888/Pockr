@@ -45,6 +45,10 @@ class VmPlatform {
     }
   }
 
+  static Future<void> writeSerialCommand(String command) async {
+    await platform.invokeMethod<void>('writeSerialCommand', {'command': command});
+  }
+
   static Future<String> getBootLog() async {
     final String? result = await platform.invokeMethod<String>('getBootLog');
     return result ?? '';
@@ -121,6 +125,7 @@ class VmState extends ChangeNotifier {
   String _status = 'stopped';
   bool _isHealthy = false;
   bool _isApiReachable = false;
+  bool _isSerialReady = false;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -144,6 +149,7 @@ class VmState extends ChangeNotifier {
   String get status => _status;
   bool get isHealthy => _isHealthy;
   bool get isApiReachable => _isApiReachable;
+  bool get isSerialReady => _isSerialReady;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -157,6 +163,7 @@ class VmState extends ChangeNotifier {
     _status = 'starting';
     _isHealthy = false;
     _isApiReachable = false;
+    _isSerialReady = false;
     _errorMessage = null;
     notifyListeners();
 
@@ -186,6 +193,7 @@ class VmState extends ChangeNotifier {
       _status = 'stopped';
       _isHealthy = false;
       _isApiReachable = false;
+      _isSerialReady = false;
       _errorMessage = null;
     } catch (e) {
       _errorMessage = e.toString();
@@ -202,12 +210,14 @@ class VmState extends ChangeNotifier {
       if (_status != 'running' && _status != 'starting') return;
       _isHealthy = readiness.dockerHealthy;
       _isApiReachable = readiness.apiReachable;
+      _isSerialReady = readiness.serialReady;
       if (_isHealthy && _status == 'starting') _status = 'running';
       notifyListeners();
     } catch (e) {
       if (_status == 'running' || _status == 'starting') {
         _isHealthy = false;
         _isApiReachable = false;
+        _isSerialReady = false;
         notifyListeners();
       }
       debugPrint("Error checking health: $e");
@@ -223,6 +233,7 @@ class VmState extends ChangeNotifier {
       } else {
         _isHealthy = false;
         _isApiReachable = false;
+        _isSerialReady = false;
         _stopHealthPolling();
       }
       notifyListeners();
@@ -246,16 +257,19 @@ class VmState extends ChangeNotifier {
         final readiness = await VmPlatform.getVmReadiness();
         if (generation != _healthGeneration || _pollPaused) return;
         if (readiness.dockerHealthy != _isHealthy ||
-            readiness.apiReachable != _isApiReachable) {
+            readiness.apiReachable != _isApiReachable ||
+            readiness.serialReady != _isSerialReady) {
           _isHealthy = readiness.dockerHealthy;
           _isApiReachable = readiness.apiReachable;
+          _isSerialReady = readiness.serialReady;
           notifyListeners();
         }
       } catch (error) {
         if (generation != _healthGeneration || _pollPaused) return;
-        if (_isHealthy || _isApiReachable) {
+        if (_isHealthy || _isApiReachable || _isSerialReady) {
           _isHealthy = false;
           _isApiReachable = false;
+          _isSerialReady = false;
           notifyListeners();
         }
         debugPrint('VM health probe failed: $error');

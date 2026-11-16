@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +24,41 @@ class _TerminalScreenState extends State<TerminalScreen> {
   final _scrollController = ScrollController();
   final List<_TerminalEntry> _history = [];
   bool _busy = false;
+  String _serialLog = '';
+  Timer? _serialPoll;
+  bool _readingSerial = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _serialPoll = Timer.periodic(const Duration(milliseconds: 800), (_) {
+      if (!mounted) return;
+      final vm = context.read<VmState>();
+      if (vm.status == 'running' && !vm.isApiReachable && vm.isSerialReady) {
+        _refreshSerialLog();
+      }
+    });
+  }
+
+  Future<void> _refreshSerialLog() async {
+    if (_readingSerial) return;
+    _readingSerial = true;
+    try {
+      final log = await VmPlatform.getBootLog();
+      if (!mounted || log == _serialLog) return;
+      setState(() => _serialLog = log);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      });
+    } catch (_) {
+      // Existing boot-log dialog remains available if method calls fail.
+    } finally {
+      _readingSerial = false;
+    }
+  }
+
 
   static const _quickCmds = [
     'docker ps -a',
@@ -36,6 +72,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   @override
   void dispose() {
+    _serialPoll?.cancel();
     _cmdController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -46,20 +83,31 @@ class _TerminalScreenState extends State<TerminalScreen> {
     if (trimmed.isEmpty) return;
     setState(() => _busy = true);
     try {
-      final result = await VmPlatform.vmExec(trimmed);
-      setState(() {
-        _history.add(_TerminalEntry(
-          trimmed,
-          (result['stdout'] as String?) ?? '',
-          (result['stderr'] as String?) ?? '',
-          (result['exitCode'] as num?)?.toInt() ?? -1,
-        ));
-      });
+      final vm = context.read<VmState>();
+      if (vm.isApiReachable) {
+        final result = await VmPlatform.vmExec(trimmed);
+        if (!mounted) return;
+        setState(() {
+          _history.add(_TerminalEntry(
+            trimmed,
+            (result['stdout'] as String?) ?? '',
+            (result['stderr'] as String?) ?? '',
+            (result['exitCode'] as num?)?.toInt() ?? -1,
+          ));
+        });
+      } else if (vm.isSerialReady) {
+        await VmPlatform.writeSerialCommand(trimmed);
+        await _refreshSerialLog();
+      } else {
+        throw StateError('Alpine serial console is not ready');
+      }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _history.add(_TerminalEntry(trimmed, '', e.toString(), -1));
       });
     } finally {
+      if (!mounted) return;
       setState(() => _busy = false);
       _cmdController.clear();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -77,8 +125,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   Widget build(BuildContext context) {
     final vmState = context.watch<VmState>();
-    // Docker failure must not disable the Alpine management terminal.
-    final vmReady = vmState.status == 'running' && vmState.isApiReachable;
+    // Rescue terminal uses an app-private QEMU serial pipe when HTTP fails.
+    final serialMode = vmState.status == 'running' &&
+        !vmState.isApiReachable && vmState.isSerialReady;
+    final vmReady = vmState.status == 'running' &&
+        (vmState.isApiReachable || vmState.isSerialReady);
 
     return Scaffold(
       appBar: AppBar(
@@ -113,12 +164,22 @@ class _TerminalScreenState extends State<TerminalScreen> {
               ),
             ),
           ),
-          if (vmReady && !vmState.isHealthy)
+          if (serialMode)
             const Padding(
               padding: EdgeInsets.all(12),
               child: Text(
-                'Alpine terminal available. Docker is not ready. '
-                'Inspect: rc-service docker status, tail -80 /var/log/docker.log',
+                'LOCAL SERIAL RESCUE: commands run as root inside Alpine, '
+                'even if port 7080 fails. Output below is combined serial text. '
+                'Do not type passwords or other secrets.',
+                style: TextStyle(color: Colors.orange, fontSize: 12),
+              ),
+            )
+          else if (vmReady && !vmState.isHealthy)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'Alpine API terminal available. Docker is not ready. '
+                'Try rc-service docker status or inspect /var/log/docker.log.',
                 style: TextStyle(color: Colors.orange, fontSize: 12),
               ),
             ),
@@ -126,13 +187,25 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
           // Output area
           Expanded(
-            child: _history.isEmpty
+            child: serialMode
+                ? SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    child: SelectableText(
+                      _serialLog.isEmpty ? 'Waiting for Alpine serial output...' : _serialLog,
+                      style: const TextStyle(
+                        color: Colors.white, fontFamily: 'monospace',
+                        fontSize: 12, height: 1.4,
+                      ),
+                    ),
+                  )
+                : _history.isEmpty
                 ? Center(
                     child: Text(
                       vmReady
                           ? 'Run a command to see output'
                           : vmState.status == 'running'
-                              ? 'VM running, but management API is unavailable. View boot log.'
+                              ? 'VM running, but no API or serial rescue shell is ready. View boot log.'
                               : 'VM not running',
                       style: TextStyle(
                           color: Colors.white.withOpacity(0.3), fontSize: 13),
@@ -256,7 +329,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
               style: const TextStyle(
                   color: Colors.white, fontFamily: 'monospace', fontSize: 13),
               decoration: InputDecoration(
-                hintText: vmReady ? 'enter command...' : 'VM not running',
+                hintText: vmReady
+                    ? 'enter command...'
+                    : 'Waiting for Alpine API or serial rescue...',
                 hintStyle: TextStyle(
                     color: Colors.white.withOpacity(0.25),
                     fontFamily: 'monospace',

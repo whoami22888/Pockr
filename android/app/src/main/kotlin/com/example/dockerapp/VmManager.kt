@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.zip.GZIPInputStream
@@ -15,6 +16,8 @@ class VmManager(private val context: Context) {
     @Volatile private var vmProcess: Process? = null
     @Volatile private var isRunning = false
     private val bootLogLock = Any()
+    private val serialWriteLock = Any()
+    @Volatile private var serialReady = false
     private val bootLines = ArrayDeque<String>()
 
     /** Guest serial output remains available even when the HTTP API never starts. */
@@ -24,6 +27,7 @@ class VmManager(private val context: Context) {
     }
 
     private fun recordBootLine(line: String) {
+        if (line.contains("POCKR_SERIAL_RESCUE_READY")) serialReady = true
         val safe = line.replace(token, "[redacted]")
         synchronized(bootLogLock) {
             if (bootLines.size >= 200) bootLines.removeFirst()
@@ -114,6 +118,7 @@ class VmManager(private val context: Context) {
         Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>")}")
 
         synchronized(bootLogLock) { bootLines.clear() }
+        serialReady = false
         // Retain this process locally: restarts must not rebind the previous log reader.
         val process = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
@@ -150,14 +155,18 @@ class VmManager(private val context: Context) {
         }
         vmProcess = null
         isRunning = false
+        serialReady = false
         Log.d(TAG, "VM stopped")
     }
 
     fun getReadiness(): Map<String, Boolean> {
         if (getStatus() != "running") {
-            return mapOf("apiReachable" to false, "dockerHealthy" to false)
+            return mapOf(
+                "apiReachable" to false, "dockerHealthy" to false,
+                "serialReady" to false
+            )
         }
-        return apiClient.getReadiness()
+        return apiClient.getReadiness() + ("serialReady" to serialReady)
     }
 
     fun checkHealth(): Boolean = getReadiness()["dockerHealthy"] == true
@@ -189,6 +198,28 @@ class VmManager(private val context: Context) {
     fun getLogs(name: String, tail: Int): String = apiClient.getLogs(name, tail)
 
     fun vmExec(cmd: String): Map<String, Any> = apiClient.vmExec(cmd)
+
+    /** A local-only rescue path when even the guest HTTP management API fails.
+     * QEMU's -serial stdio is a pipe owned by this Android app, not a TCP port.
+     */
+    fun writeSerialCommand(command: String) {
+        require(command.isNotBlank() && command.length <= 1024) {
+            "Serial command must contain 1-1024 characters"
+        }
+        require(command.none { it == '\n' || it == '\r' || it.code < 0x20 && it != '\t' }) {
+            "Use a single printable command line"
+        }
+        check(getStatus() == "running" && serialReady) {
+            "VM serial rescue shell has not reached ready state"
+        }
+        val process = vmProcess ?: throw IllegalStateException("No QEMU process")
+        synchronized(serialWriteLock) {
+            // Never send the API token or other automatic credentials over serial.
+            process.outputStream.write((command + "\r").toByteArray(StandardCharsets.UTF_8))
+            process.outputStream.flush()
+        }
+        recordBootLine("serial> $command")
+    }
 
     // -------------------------------------------------------------------------
     // Token management

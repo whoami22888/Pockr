@@ -37,7 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           sh -n guest/init_bootstrap.sh
-          python3 -m py_compile guest/api_server.py guest/performance_probe.py
+          python3 -m py_compile guest/api_server.py guest/performance_probe.py tests/ci_serial_rescue_guest.py
+          sh -n guest/serial_rescue.sh
           python3 -m unittest discover -s tests -p '*test.py' -v
       - name: Build generated Alpine ARM64 runtime disk
         shell: bash

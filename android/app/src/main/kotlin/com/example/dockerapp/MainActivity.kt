@@ -69,6 +69,17 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "writeSerialCommand" -> executor.execute {
+                        try {
+                            val command = call.argument<String>("command")
+                                ?: throw IllegalArgumentException("command required")
+                            vmManager.writeSerialCommand(command)
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("SERIAL_EXEC_ERROR", e.message, null) }
+                        }
+                    }
+
                     "getBootLog" -> {
                         // Works even when Docker and port 7080 are unavailable.
                         result.success(vmManager.getBootLog())

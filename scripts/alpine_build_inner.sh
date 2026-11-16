@@ -103,8 +103,9 @@ cp /bootstrap_src/api_server.py /mnt/alpine/bootstrap/
 cp /bootstrap_src/docker_health.py /mnt/alpine/bootstrap/
 cp /bootstrap_src/requirements.txt /mnt/alpine/bootstrap/
 cp /bootstrap_src/init_bootstrap.sh /mnt/alpine/bootstrap/
+cp /bootstrap_src/serial_rescue.sh /mnt/alpine/bootstrap/
 cp /bootstrap_src/performance_probe.py /mnt/alpine/bootstrap/
-chmod +x /mnt/alpine/bootstrap/init_bootstrap.sh
+chmod +x /mnt/alpine/bootstrap/init_bootstrap.sh /mnt/alpine/bootstrap/serial_rescue.sh
 
 echo "=== docker-bootstrap OpenRC service ==="
 cat > /mnt/alpine/etc/init.d/docker-bootstrap << 'RC'
@@ -129,6 +130,26 @@ start() {
 RC
 chmod +x /mnt/alpine/etc/init.d/docker-bootstrap
 
+echo "=== Independent local serial rescue service ==="
+# In app builds QEMU's -serial stdio is an app-private pipe. The rescue
+# shell therefore remains inaccessible over the network, even if the HTTP
+# management API never starts.
+cat > /mnt/alpine/etc/init.d/pockr-serial << 'RC'
+#!/sbin/openrc-run
+name="Pockr local serial rescue"
+description="Start private ttyAMA0 recovery shell before Docker and the API"
+depend() {
+    need devfs
+    before networking docker-bootstrap docker
+}
+start() {
+    ebegin "Starting local serial rescue"
+    nohup /bin/sh /bootstrap/serial_rescue.sh </dev/null >/dev/null 2>&1 &
+    eend $?
+}
+RC
+chmod +x /mnt/alpine/etc/init.d/pockr-serial
+
 echo "=== Configuring OpenRC runlevels ==="
 mkdir -p /mnt/alpine/etc/runlevels/sysinit \
          /mnt/alpine/etc/runlevels/boot \
@@ -139,7 +160,7 @@ for svc in devfs dmesg; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/sysinit/$svc
 done
 
-for svc in modules sysctl hostname bootmisc syslog; do
+for svc in modules sysctl hostname bootmisc syslog pockr-serial; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/boot/$svc
 done
 
