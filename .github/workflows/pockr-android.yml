@@ -40,7 +40,7 @@ jobs:
           sh -n guest/init_bootstrap.sh
           python3 -m py_compile guest/api_server.py guest/performance_probe.py tests/ci_serial_rescue_guest.py tests/ci_qemu_stdio_smoke.py
           sh -n guest/serial_rescue.sh
-          sh -n scripts/generate_guest_version.sh
+          bash -n scripts/generate_guest_version.sh
           python3 -m unittest discover -s tests -p '*test.py' -v
       - name: Build generated Alpine ARM64 runtime disk
         shell: bash
