@@ -153,18 +153,14 @@ class VmManager(private val context: Context) {
         Log.d(TAG, "VM stopped")
     }
 
-    fun checkHealth(): Boolean {
-        if (!isRunning) return false
-        vmProcess?.let {
-            try {
-                it.exitValue()
-                Log.w(TAG, "QEMU process exited unexpectedly")
-                isRunning = false
-                return false
-            } catch (_: IllegalThreadStateException) { }
+    fun getReadiness(): Map<String, Boolean> {
+        if (getStatus() != "running") {
+            return mapOf("apiReachable" to false, "dockerHealthy" to false)
         }
-        return apiClient.checkHealth()
+        return apiClient.getReadiness()
     }
+
+    fun checkHealth(): Boolean = getReadiness()["dockerHealthy"] == true
 
     fun getStatus(): String {
         // Check the process directly first — isRunning can be briefly false during

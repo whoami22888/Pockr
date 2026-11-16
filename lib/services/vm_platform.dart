@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'health_poll_policy.dart';
+import 'guest_readiness.dart';
 
 class VmPlatform {
   static const platform = MethodChannel('com.example.dockerapp/vm');
@@ -21,6 +22,16 @@ class VmPlatform {
     } on PlatformException catch (e) {
       debugPrint("Failed to stop VM: ${e.message}");
       rethrow;
+    }
+  }
+
+  static Future<GuestReadiness> getVmReadiness() async {
+    try {
+      final payload = await platform.invokeMethod<Map<dynamic, dynamic>>('getVmReadiness');
+      return GuestReadiness.fromPlatform(payload);
+    } on PlatformException catch (e) {
+      debugPrint("Guest readiness unavailable: ${e.message}");
+      return const GuestReadiness.unavailable();
     }
   }
 
@@ -109,6 +120,7 @@ class VmPlatform {
 class VmState extends ChangeNotifier {
   String _status = 'stopped';
   bool _isHealthy = false;
+  bool _isApiReachable = false;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -131,6 +143,7 @@ class VmState extends ChangeNotifier {
 
   String get status => _status;
   bool get isHealthy => _isHealthy;
+  bool get isApiReachable => _isApiReachable;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -143,6 +156,7 @@ class VmState extends ChangeNotifier {
     _isLoading = true;
     _status = 'starting';
     _isHealthy = false;
+    _isApiReachable = false;
     _errorMessage = null;
     notifyListeners();
 
@@ -171,6 +185,7 @@ class VmState extends ChangeNotifier {
       await VmPlatform.stopVm();
       _status = 'stopped';
       _isHealthy = false;
+      _isApiReachable = false;
       _errorMessage = null;
     } catch (e) {
       _errorMessage = e.toString();
@@ -183,14 +198,16 @@ class VmState extends ChangeNotifier {
 
   Future<void> checkHealth() async {
     try {
-      final healthy = await VmPlatform.checkHealth();
+      final readiness = await VmPlatform.getVmReadiness();
       if (_status != 'running' && _status != 'starting') return;
-      _isHealthy = healthy;
+      _isHealthy = readiness.dockerHealthy;
+      _isApiReachable = readiness.apiReachable;
       if (_isHealthy && _status == 'starting') _status = 'running';
       notifyListeners();
     } catch (e) {
       if (_status == 'running' || _status == 'starting') {
         _isHealthy = false;
+        _isApiReachable = false;
         notifyListeners();
       }
       debugPrint("Error checking health: $e");
@@ -205,6 +222,7 @@ class VmState extends ChangeNotifier {
         _startHealthPolling();
       } else {
         _isHealthy = false;
+        _isApiReachable = false;
         _stopHealthPolling();
       }
       notifyListeners();
@@ -225,16 +243,19 @@ class VmState extends ChangeNotifier {
       _healthPollTimer = null;
       if (generation != _healthGeneration || _pollPaused) return;
       try {
-        final healthy = await VmPlatform.checkHealth();
+        final readiness = await VmPlatform.getVmReadiness();
         if (generation != _healthGeneration || _pollPaused) return;
-        if (healthy != _isHealthy) {
-          _isHealthy = healthy;
+        if (readiness.dockerHealthy != _isHealthy ||
+            readiness.apiReachable != _isApiReachable) {
+          _isHealthy = readiness.dockerHealthy;
+          _isApiReachable = readiness.apiReachable;
           notifyListeners();
         }
       } catch (error) {
         if (generation != _healthGeneration || _pollPaused) return;
-        if (_isHealthy) {
+        if (_isHealthy || _isApiReachable) {
           _isHealthy = false;
+          _isApiReachable = false;
           notifyListeners();
         }
         debugPrint('VM health probe failed: $error');

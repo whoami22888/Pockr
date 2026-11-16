@@ -76,7 +76,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final vmReady = context.watch<VmState>().isHealthy;
+    final vmState = context.watch<VmState>();
+    // Docker failure must not disable the Alpine management terminal.
+    final vmReady = vmState.status == 'running' && vmState.isApiReachable;
 
     return Scaffold(
       appBar: AppBar(
@@ -111,6 +113,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
               ),
             ),
           ),
+          if (vmReady && !vmState.isHealthy)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'Alpine terminal available. Docker is not ready. '
+                'Inspect: rc-service docker status, tail -80 /var/log/docker.log',
+                style: TextStyle(color: Colors.orange, fontSize: 12),
+              ),
+            ),
           const Divider(height: 1, color: Color(0xFF1E2D45)),
 
           // Output area
@@ -118,7 +129,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
             child: _history.isEmpty
                 ? Center(
                     child: Text(
-                      vmReady ? 'Run a command to see output' : 'VM not running',
+                      vmReady
+                          ? 'Run a command to see output'
+                          : vmState.status == 'running'
+                              ? 'VM running, but management API is unavailable. View boot log.'
+                              : 'VM not running',
                       style: TextStyle(
                           color: Colors.white.withOpacity(0.3), fontSize: 13),
                     ),

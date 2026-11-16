@@ -57,3 +57,47 @@ if [[ "$ready" -ne 1 ]]; then
     tail -120 "$QEMU_LOG" >&2 || true
     exit 1
 fi
+
+# The management API must remain responsive after Docker is stopped.
+# A guest that reports healthy with no usable diagnostic terminal is invalid.
+echo "Verifying the authenticated management terminal survives Docker failure"
+curl -fsS --max-time 25 \
+  -H 'Authorization: Bearer ci-test-only' \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"rc-service docker stop"}' \
+  "http://127.0.0.1:$PORT/vm/exec" > /tmp/pockr-docker-stop.json
+python3 - <<'PY'
+import json
+with open("/tmp/pockr-docker-stop.json") as handle:
+    result = json.load(handle)
+assert result.get("exitCode") == 0, result
+PY
+
+degraded=0
+for i in $(seq 1 30); do
+    if payload="$(curl -fsS --max-time 3 "http://127.0.0.1:$PORT/health" 2>/dev/null)"; then
+        if python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("status") == "degraded" else 1)' "$payload"; then
+            degraded=1
+            break
+        fi
+    fi
+    sleep 1
+done
+if [[ "$degraded" -ne 1 ]]; then
+    echo "Docker stop did not transition health to degraded" >&2
+    tail -100 "$QEMU_LOG" >&2 || true
+    exit 1
+fi
+curl -fsS --max-time 15 \
+  -H 'Authorization: Bearer ci-test-only' \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"uname -m"}' \
+  "http://127.0.0.1:$PORT/vm/exec" > /tmp/pockr-guest-exec.json
+python3 - <<'PY'
+import json
+with open("/tmp/pockr-guest-exec.json") as handle:
+    result = json.load(handle)
+assert result.get("exitCode") == 0, result
+assert result.get("stdout", "").strip() == "aarch64", result
+print("Guest terminal works while Docker is degraded; independent startup verified")
+PY

@@ -233,7 +233,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   isRunning
                       ? vmState.isHealthy
                           ? 'API healthy at localhost:7080'
-                          : 'Alpine API not responding. Tap View VM boot log below.'
+                          : vmState.isApiReachable
+                               ? 'Alpine terminal ready; Docker daemon unavailable.'
+                               : 'Alpine API not responding. Tap View VM boot log below.'
                       : isStarting
                           ? 'Extracting assets and launching QEMU...'
                           : 'Virtual machine is not running',
@@ -256,7 +258,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  vmState.isHealthy ? 'Healthy' : 'Checking',
+                  vmState.isHealthy
+                      ? 'Healthy'
+                      : vmState.isApiReachable
+                          ? 'Docker down'
+                          : 'Checking',
                   style: TextStyle(
                     color: vmState.isHealthy
                         ? const Color(0xFF00C896)

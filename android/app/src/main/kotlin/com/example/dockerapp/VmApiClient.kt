@@ -31,25 +31,28 @@ class VmApiClient(private val token: String) {
     private fun Request.Builder.withAuth(): Request.Builder =
         header("Authorization", "Bearer $token")
 
-    fun checkHealth(): Boolean {
+    /** One HTTP request distinguishes API availability from Docker readiness. */
+    fun getReadiness(): Map<String, Boolean> {
+        val unavailable = mapOf("apiReachable" to false, "dockerHealthy" to false)
         return try {
-            val request = Request.Builder()
-                .url("$baseUrl/health")
-                .withAuth()
-                .get()
-                .build()
-
+            val request = Request.Builder().url("$baseUrl/health").get().build()
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return false
-                val payload = response.body?.string() ?: return false
-                JsonParser.parseString(payload).asJsonObject
-                    .get("status")?.asString == "ok"
+                if (!response.isSuccessful) return unavailable
+                val payload = response.body?.string() ?: return unavailable
+                val status = JsonParser.parseString(payload).asJsonObject.get("status")?.asString
+                when (status) {
+                    "ok" -> mapOf("apiReachable" to true, "dockerHealthy" to true)
+                    "degraded" -> mapOf("apiReachable" to true, "dockerHealthy" to false)
+                    else -> unavailable
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Health check failed: ${e.message}")
-            false
+            Log.w(TAG, "Guest API is not ready: ${e.message}")
+            unavailable
         }
     }
+
+    fun checkHealth(): Boolean = getReadiness()["dockerHealthy"] == true
 
     fun startContainer(image: String, name: String, cmd: List<String>) {
         val json = JsonObject().apply {

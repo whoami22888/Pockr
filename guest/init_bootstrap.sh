@@ -1,93 +1,50 @@
 #!/bin/sh
-# Startup: runs on every QEMU VM boot, including restarts.
-# Docker and Python are pre-installed in the base image.
-# This script reads the API token, waits for Docker, then starts the API server.
+# Start the authenticated guest management API independently of Docker.
+# OpenRC runs this on EVERY VM boot (not only initial installation).
 
-echo "=== Docker VM Bootstrap Starting ==="
-
-# ---------------------------------------------------------------------------
-# Read API token from kernel cmdline.
-# Android app injects it via: -append "... api_token=<UUID>"
-# Readable from: /proc/cmdline
-# ---------------------------------------------------------------------------
+echo "=== Pockr management API startup ==="
 TOKEN_FILE="/bootstrap/token"
 
 TOKEN=$(tr ' ' '\n' < /proc/cmdline | grep '^api_token=' | cut -d= -f2-)
 if [ -n "$TOKEN" ]; then
-    echo -n "$TOKEN" > "$TOKEN_FILE"
-    echo "Token loaded from kernel cmdline"
+    printf '%s' "$TOKEN" > "$TOKEN_FILE"
+    chmod 600 "$TOKEN_FILE"
+    echo "API credential loaded from kernel command line"
+elif [ -f "$TOKEN_FILE" ]; then
+    TOKEN=$(cat "$TOKEN_FILE")
+    echo "Using existing API credential"
 else
-    echo "WARNING: api_token not found in kernel cmdline"
-    # Fallback: reuse token from previous boot if present
-    if [ -f "$TOKEN_FILE" ]; then
-        TOKEN=$(cat "$TOKEN_FILE")
-        echo "Using persisted token from $TOKEN_FILE"
-    fi
-fi
-
-export API_TOKEN="$TOKEN"
-
-# ---------------------------------------------------------------------------
-# Wait for Docker daemon (started by OpenRC docker service)
-# ---------------------------------------------------------------------------
-echo "Waiting for Docker daemon..."
-# Check readiness immediately; do not impose a mandatory three-second delay.
-# Avoid the CPU-intensive full "docker info" command on each retry.
-timeout=120
-while [ $timeout -gt 0 ]; do
-    if docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
-        echo "Docker is ready (waited $((120 - timeout))s)"
-        break
-    fi
-    # Print Docker log update every 30s
-    if [ $((timeout % 30)) -eq 0 ]; then
-        echo "--- dockerd log (t=$((120 - timeout))s) ---"
-        tail -10 /var/log/docker.log 2>/dev/null || true
-        ls -la /var/run/docker.sock 2>/dev/null || echo "(no socket)"
-    fi
-    sleep 1
-    timeout=$((timeout - 1))
-done
-
-if [ $timeout -eq 0 ]; then
-    echo "ERROR: Docker did not become ready in 120s"
-    echo "=== final dockerd log ==="
-    cat /var/log/docker.log 2>/dev/null | tail -40 || true
-    echo "=== docker info ==="
-    docker info 2>&1 || true
+    echo "ERROR: No API credential configured; refusing insecure terminal access"
     exit 1
 fi
+export API_TOKEN="$TOKEN"
 
-echo "Docker: $(docker --version)"
-
-# ---------------------------------------------------------------------------
-# Start API server
-# ---------------------------------------------------------------------------
-echo "Starting API server on 0.0.0.0:7080..."
+# Start management independently: Docker can be broken while /vm/exec works.
+echo "Launching Pockr management API on guest port 7080..."
 mkdir -p /var/log
 API_TOKEN="$TOKEN" nohup /usr/bin/python3 /bootstrap/api_server.py \
     > /var/log/docker-api.log 2>&1 &
-echo $! > /var/run/docker-api.pid
-echo "API server PID: $!"
+api_pid=$!
+echo "$api_pid" > /var/run/docker-api.pid
+echo "API process started (pid=$api_pid)"
 
-# ---------------------------------------------------------------------------
-# Wait for API server to respond
-# ---------------------------------------------------------------------------
-echo "Waiting for API server..."
+# /api/ready is independent of Docker and returns a non-secret readiness flag.
+# Do not mistake a degraded Docker health check for a failed API bootstrap.
 timeout=30
-while [ $timeout -gt 0 ]; do
-    if wget -q -O- http://127.0.0.1:7080/health >/dev/null 2>&1; then
-        echo "API server is ready at http://127.0.0.1:7080"
-        break
+while [ "$timeout" -gt 0 ]; do
+    if wget -q -O- http://127.0.0.1:7080/api/ready >/dev/null 2>&1; then
+        echo "Pockr management API ready; Docker starts separately"
+        exit 0
+    fi
+    if ! kill -0 "$api_pid" 2>/dev/null; then
+        echo "ERROR: Pockr API process exited during startup"
+        tail -40 /var/log/docker-api.log 2>/dev/null || true
+        exit 1
     fi
     sleep 1
     timeout=$((timeout - 1))
 done
 
-if [ $timeout -eq 0 ]; then
-    echo "ERROR: API server health check failed"
-    cat /var/log/docker-api.log 2>/dev/null | tail -20 || true
-    exit 1
-fi
-
-echo "=== Bootstrap Complete ==="
+echo "ERROR: management API readiness timed out"
+tail -40 /var/log/docker-api.log 2>/dev/null || true
+exit 1

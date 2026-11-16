@@ -55,6 +55,20 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getVmReadiness" -> executor.execute {
+                        try {
+                            val readiness = vmManager.getReadiness()
+                            runOnUiThread { result.success(readiness) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.success(mapOf(
+                                    "apiReachable" to false,
+                                    "dockerHealthy" to false,
+                                ))
+                            }
+                        }
+                    }
+
                     "getBootLog" -> {
                         // Works even when Docker and port 7080 are unavailable.
                         result.success(vmManager.getBootLog())

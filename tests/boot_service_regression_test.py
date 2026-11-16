@@ -41,8 +41,21 @@ class BootstrapServiceTest(unittest.TestCase):
 
     def test_failed_api_health_does_not_report_success(self):
         code = (ROOT / "guest/init_bootstrap.sh").read_text()
-        self.assertIn('echo "ERROR: API server health check failed"', code)
-        self.assertRegex(code, r'API server health check failed"\n.*\n\s*exit 1')
+        self.assertIn('echo "ERROR: management API readiness timed out"', code)
+        self.assertIn("exit 1", code)
+
+    def test_management_service_does_not_depend_on_docker(self):
+        self.assertIn("need networking", service_template)
+        self.assertIn("before docker", service_template)
+        self.assertNotIn("need docker", service_template)
+
+    def test_api_readiness_is_independent_of_docker_health(self):
+        api = (ROOT / "guest/api_server.py").read_text()
+        from_ready = api.index('@app.get("/api/ready")')
+        from_docker = api.index('@app.get("/health")')
+        self.assertLess(from_ready, from_docker)
+        self.assertNotIn("get_docker_version", api[from_ready:from_docker])
+
 
 
 if __name__ == "__main__":

@@ -113,8 +113,10 @@ name="Docker Bootstrap"
 description="Start API server (Docker pre-installed in base image)"
 
 depend() {
-    need docker
-    after docker
+    # The terminal's management API must boot before Docker so a broken
+    # daemon can still be diagnosed through authenticated /vm/exec.
+    need networking
+    before docker
 }
 
 start() {
@@ -141,8 +143,8 @@ for svc in modules sysctl hostname bootmisc syslog; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/boot/$svc
 done
 
-# networking → docker → docker-bootstrap (ordered by depend() in each service)
-for svc in networking docker docker-bootstrap; do
+# API starts once networking is ready, before Docker daemon initialization.
+for svc in networking docker-bootstrap docker; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/default/$svc
 done
 

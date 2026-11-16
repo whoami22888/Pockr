@@ -119,6 +119,12 @@ class VmExecRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/ready")
+async def api_ready():
+    """Management API is responding, even if dockerd has failed."""
+    return {"status": "ready"}
+
+
 @app.get("/health")
 async def health_check():
     """Health check — no auth required so the app can poll before token is verified."""
