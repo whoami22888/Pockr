@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'about.dart';
+import '../services/vm_resource_profile.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -11,7 +12,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   int _vcpuCount = 2;
-  int _ramMb = 1536;
+  int _ramMb = 2048;
+  String _performanceProfile = 'standard';
   bool _autoStart = false;
 
   @override
@@ -25,7 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     setState(() {
       _vcpuCount = prefs.getInt('vcpu_count') ?? 2;
-      _ramMb = prefs.getInt('ram_mb') ?? 1536;
+      _ramMb = prefs.getInt('ram_mb') ?? 2048;
+      _performanceProfile = prefs.getString('performance_profile') ?? 'standard';
       _autoStart = prefs.getBool('auto_start') ?? false;
     });
   }
@@ -34,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('vcpu_count', _vcpuCount);
     await prefs.setInt('ram_mb', _ramMb);
+    await prefs.setString('performance_profile', _performanceProfile);
     await prefs.setBool('auto_start', _autoStart);
 
     if (mounted) {
@@ -99,12 +103,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const Padding(
-            padding: EdgeInsets.fromLTRB(16, 2, 16, 12),
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Text(
-              'Balanced default: 2 vCPUs / 1536 MB. Select 1024 MB for a '
-              'lighter VM or 2048 MB for larger containers. Resource changes '
-              'take effect on the next VM start.',
+              'Profiles change CPU and memory limits, not guaranteed speed. '
+              'Compare boot time and container throughput on your device. '
+              'Changes take effect after restarting the VM.',
               style: TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+          ),
+          ListTile(
+            title: const Text('Performance profile'),
+            subtitle: Text(
+              _performanceProfile == 'turbo'
+                  ? 'Experimental: 4 vCPUs / 3072 MB (higher heat)'
+                  : _performanceProfile == 'economy'
+                      ? 'Low memory: 2 vCPUs / 1536 MB'
+                      : 'Original capacity: 2 vCPUs / 2048 MB',
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'economy', label: Text('Eco')),
+                ButtonSegment(value: 'standard', label: Text('Original')),
+                ButtonSegment(value: 'turbo', label: Text('Turbo')),
+              ],
+              selected: {_performanceProfile},
+              onSelectionChanged: (selected) {
+                setState(() {
+                  _performanceProfile = selected.first;
+                  final profile = vmResourceProfile(_performanceProfile);
+                  _vcpuCount = profile.vcpus;
+                  _ramMb = profile.memoryMb;
+                });
+              },
             ),
           ),
           const Divider(),

@@ -9,7 +9,10 @@
 - Each APK build runs Flutter unit tests for health-poll scheduling. Existing OpenRC reboot regression remains mandatory.
 
 ## Baseline and measurements (required before performance claims)
-Run 3 cold boots at the original 2048 MiB and 3 at balanced 1536 MiB on the same phone, with a clean guest image and consistent power conditions; record boot-to-healthy latency, P95 HTTP health latency, number of failed boots, and QEMU/dockerd RSS. Repeat with a small Docker image cold and warm (cached) and record image pull vs process start. Sample idle battery/CPU and thermal throttling for at least 10 min, and check screen-off. Do not confuse a smaller guest memory limit with measured battery savings or throughput gains.
+Run 3 cold boots at the original 2048 MiB/2 vCPU, 3 Eco boots, and 3 Turbo boots on the same phone, with a clean guest image and consistent power conditions; record boot-to-healthy latency, P95 HTTP health latency, number of failed boots, and QEMU/dockerd RSS. Repeat with a small Docker image cold and warm (cached) and record image pull vs process start. Sample idle battery/CPU and thermal throttling for at least 10 min, and check screen-off. Do not confuse a smaller guest memory limit with measured battery savings or throughput gains.
 
 ## Migration for a fresh/no-container installation
 A newly generated Alpine disk contains the corrected recurring OpenRC API startup service. Updating an installed APK does not update the existing QCOW2 base image; reset only after verifying there is no valuable VM data. The normal Android app reset deletes local VM data.
+
+## Faster readiness loop
+Removed the mandatory three-second pause before checking Docker and replaced repeated full `docker info` calls with the smaller server-version query. The actual speedup depends on Docker startup and must be compared on device.

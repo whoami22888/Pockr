@@ -31,18 +31,11 @@ export API_TOKEN="$TOKEN"
 # Wait for Docker daemon (started by OpenRC docker service)
 # ---------------------------------------------------------------------------
 echo "Waiting for Docker daemon..."
-# Print Docker log after 3s to diagnose startup issues
-sleep 3
-echo "=== dockerd log (first 3s) ==="
-cat /var/log/docker.log 2>/dev/null || echo "(no log yet)"
-echo "=== end dockerd log ==="
-echo "=== /var/run/ ==="
-ls /var/run/ 2>/dev/null
-echo "======================"
-
-timeout=117
+# Check readiness immediately; do not impose a mandatory three-second delay.
+# Avoid the CPU-intensive full "docker info" command on each retry.
+timeout=120
 while [ $timeout -gt 0 ]; do
-    if docker info >/dev/null 2>&1; then
+    if docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
         echo "Docker is ready (waited $((120 - timeout))s)"
         break
     fi

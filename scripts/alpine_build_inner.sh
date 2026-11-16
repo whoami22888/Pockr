@@ -102,6 +102,7 @@ mkdir -p /mnt/alpine/bootstrap
 cp /bootstrap_src/api_server.py /mnt/alpine/bootstrap/
 cp /bootstrap_src/requirements.txt /mnt/alpine/bootstrap/
 cp /bootstrap_src/init_bootstrap.sh /mnt/alpine/bootstrap/
+cp /bootstrap_src/performance_probe.py /mnt/alpine/bootstrap/
 chmod +x /mnt/alpine/bootstrap/init_bootstrap.sh
 
 echo "=== docker-bootstrap OpenRC service ==="
