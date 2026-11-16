@@ -30,7 +30,7 @@ apk --root /mnt/alpine \
     --arch aarch64 \
     --repositories-file /mnt/alpine/etc/apk/repositories \
     add --no-cache \
-    alpine-base openrc docker python3 2>&1 | tail -25
+    alpine-base openrc docker python3 e2fsprogs-extra 2>&1 | tail -25
 echo "APK exit: $?"
 
 echo "=== Pre-installing Python API server dependencies ==="
@@ -106,7 +106,28 @@ cp /bootstrap_src/init_bootstrap.sh /mnt/alpine/bootstrap/
 cp /bootstrap_src/serial_rescue.sh /mnt/alpine/bootstrap/
 cp /bootstrap_src/guest_runtime_version.txt /mnt/alpine/etc/pockr_guest_runtime_version
 cp /bootstrap_src/performance_probe.py /mnt/alpine/bootstrap/
-chmod +x /mnt/alpine/bootstrap/init_bootstrap.sh /mnt/alpine/bootstrap/serial_rescue.sh
+cp /bootstrap_src/grow_rootfs.sh /mnt/alpine/bootstrap/
+chmod +x /mnt/alpine/bootstrap/init_bootstrap.sh /mnt/alpine/bootstrap/serial_rescue.sh /mnt/alpine/bootstrap/grow_rootfs.sh
+
+echo "=== Root ext4 expansion service ==="
+# The 8 GiB user.qcow2 overlay changes disk capacity but does NOT grow the
+# 1 GiB ext4 filesystem created in this image. Expand the live root exactly
+# once on the persistent overlay before Docker starts writing layers.
+cat > /mnt/alpine/etc/init.d/pockr-growfs << 'RC'
+#!/sbin/openrc-run
+name="Pockr root filesystem expansion"
+description="Grow live Alpine ext4 root to user QCOW2 virtual disk capacity"
+depend() {
+    need localmount
+    before docker
+}
+start() {
+    ebegin "Expanding Alpine ext4 filesystem"
+    /bin/sh /bootstrap/grow_rootfs.sh
+    eend $?
+}
+RC
+chmod +x /mnt/alpine/etc/init.d/pockr-growfs
 
 echo "=== docker-bootstrap OpenRC service ==="
 cat > /mnt/alpine/etc/init.d/docker-bootstrap << 'RC'
@@ -164,7 +185,7 @@ for svc in devfs dmesg pockr-serial; do
 done
 
 # Start API before the Docker daemon can consume resources or fail to boot.
-for svc in modules sysctl hostname bootmisc syslog docker-bootstrap; do
+for svc in modules sysctl hostname bootmisc syslog pockr-growfs docker-bootstrap; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/boot/$svc
 done
 

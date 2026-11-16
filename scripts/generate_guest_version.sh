@@ -10,6 +10,7 @@ inputs=(
   guest/docker_health.py
   guest/init_bootstrap.sh
   guest/serial_rescue.sh
+  guest/grow_rootfs.sh
   guest/performance_probe.py
   guest/requirements.txt
   android/app/src/main/assets/vm/vmlinuz-virt

@@ -64,6 +64,29 @@ if [[ "$ready" -ne 1 ]]; then
     exit 1
 fi
 
+# An 8-GiB QCOW2 does not prove ext4 was resized. Check the mounted root,
+# which is also Docker's /var/lib/docker filesystem.
+curl -fsS --max-time 15 \
+  -H 'Authorization: Bearer ci-test-only' \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"df -k / | tail -1; df -i / | tail -1"}' \
+  "http://127.0.0.1:$PORT/vm/exec" > /tmp/pockr-fs-capacity.json
+python3 - <<'PY'
+import json
+from pathlib import Path
+data = json.loads(Path("/tmp/pockr-fs-capacity.json").read_text())
+assert data.get("exitCode") == 0, data
+rows = [row.split() for row in data.get("stdout", "").splitlines() if row.strip()]
+assert len(rows) == 2, data
+blocks = int(rows[0][1])
+available = int(rows[0][3])
+free_inodes = int(rows[1][3])
+assert blocks >= 4 * 1024 * 1024, ("mounted ext4 was not expanded", data)
+assert available >= 2 * 1024 * 1024, ("insufficient Docker storage", data)
+assert free_inodes > 10000, ("Docker inode exhaustion", data)
+print(f"Guest mounted root expanded: {blocks:,} KiB; {available:,} KiB free; {free_inodes:,} free inodes")
+PY
+
 # Verify the installed guest root filesystem identifies its packaged version.
 curl -fsS --max-time 15 \
   -H 'Authorization: Bearer ci-test-only' \
