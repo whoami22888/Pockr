@@ -11,7 +11,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   int _vcpuCount = 2;
-  int _ramMb = 2048;
+  int _ramMb = 1536;
   bool _autoStart = false;
 
   @override
@@ -22,9 +22,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _vcpuCount = prefs.getInt('vcpu_count') ?? 2;
-      _ramMb = prefs.getInt('ram_mb') ?? 2048;
+      _ramMb = prefs.getInt('ram_mb') ?? 1536;
       _autoStart = prefs.getBool('auto_start') ?? false;
     });
   }
@@ -95,6 +96,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   });
                 },
               ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 2, 16, 12),
+            child: Text(
+              'Balanced default: 2 vCPUs / 1536 MB. Select 1024 MB for a '
+              'lighter VM or 2048 MB for larger containers. Resource changes '
+              'take effect on the next VM start.',
+              style: TextStyle(fontSize: 12, color: Colors.white70),
             ),
           ),
           const Divider(),

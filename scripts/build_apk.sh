@@ -73,6 +73,11 @@ cd /tmp/workspace
 
 # Flutter Dart sources
 cp -r /src/lib/. lib/
+# Flutter creates a sample widget test referencing an unrelated scaffold app.
+# Remove that test and install only this repository's tests.
+rm -rf test
+mkdir -p test
+[ -d /src/test ] && cp -r /src/test/. test/ || true
 cp /src/pubspec.yaml pubspec.yaml
 cp /src/analysis_options.yaml . 2>/dev/null || true
 
@@ -119,6 +124,11 @@ echo '--- Step 3: flutter pub get ---'
 flutter pub get
 
 echo ''
+if find test -name '*_test.dart' -print -quit | grep -q .; then
+    echo '--- Step 3a: Flutter unit tests ---'
+    flutter test --no-pub
+fi
+
 echo '--- Step 3b: Generate launcher icons from logo ---'
 dart run flutter_launcher_icons
 

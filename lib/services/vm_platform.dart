@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'health_poll_policy.dart';
 
 class VmPlatform {
   static const platform = MethodChannel('com.example.dockerapp/vm');
@@ -112,6 +113,21 @@ class VmState extends ChangeNotifier {
   String? _errorMessage;
 
   Timer? _healthPollTimer;
+  int _healthGeneration = 0;
+  bool _pollPaused = false;
+
+  /// Poll only when the UI is visible; the QEMU foreground service is separate.
+  void pauseHealthPolling() {
+    if (_pollPaused) return;
+    _pollPaused = true;
+    _stopHealthPolling();
+  }
+
+  void resumeHealthPolling() {
+    if (!_pollPaused) return;
+    _pollPaused = false;
+    refreshStatus();
+  }
 
   String get status => _status;
   bool get isHealthy => _isHealthy;
@@ -126,6 +142,7 @@ class VmState extends ChangeNotifier {
     if (_status == 'running' || _status == 'starting') return;
     _isLoading = true;
     _status = 'starting';
+    _isHealthy = false;
     _errorMessage = null;
     notifyListeners();
 
@@ -166,13 +183,16 @@ class VmState extends ChangeNotifier {
 
   Future<void> checkHealth() async {
     try {
-      _isHealthy = await VmPlatform.checkHealth();
-      if (_isHealthy && _status == 'starting') {
-        _status = 'running';
-      }
+      final healthy = await VmPlatform.checkHealth();
+      if (_status != 'running' && _status != 'starting') return;
+      _isHealthy = healthy;
+      if (_isHealthy && _status == 'starting') _status = 'running';
       notifyListeners();
     } catch (e) {
-      _isHealthy = false;
+      if (_status == 'running' || _status == 'starting') {
+        _isHealthy = false;
+        notifyListeners();
+      }
       debugPrint("Error checking health: $e");
     }
   }
@@ -181,9 +201,10 @@ class VmState extends ChangeNotifier {
     try {
       _status = await VmPlatform.getVmStatus();
       if (_status == 'running') {
-        _startHealthPolling();
         await checkHealth();
+        _startHealthPolling();
       } else {
+        _isHealthy = false;
         _stopHealthPolling();
       }
       notifyListeners();
@@ -193,28 +214,39 @@ class VmState extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------------------
-  // Periodic health polling
+  // Non-overlapping, adaptive health polling
   // -------------------------------------------------------------------------
 
   void _startHealthPolling() {
-    _healthPollTimer?.cancel();
-    // Poll every 5 seconds while the VM is expected to be running
-    _healthPollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (_status != 'running' && _status != 'starting') {
-        _stopHealthPolling();
-        return;
-      }
-      final healthy = await VmPlatform.checkHealth();
-      if (healthy != _isHealthy) {
-        _isHealthy = healthy;
-        // If health check starts failing while we think VM is running,
-        // reflect that but don't change status (VM may still be booting)
-        notifyListeners();
+    _stopHealthPolling();
+    if (_pollPaused || (_status != 'running' && _status != 'starting')) return;
+    final generation = _healthGeneration;
+    _healthPollTimer = Timer(vmHealthPollInterval(_isHealthy), () async {
+      _healthPollTimer = null;
+      if (generation != _healthGeneration || _pollPaused) return;
+      try {
+        final healthy = await VmPlatform.checkHealth();
+        if (generation != _healthGeneration || _pollPaused) return;
+        if (healthy != _isHealthy) {
+          _isHealthy = healthy;
+          notifyListeners();
+        }
+      } catch (error) {
+        if (generation != _healthGeneration || _pollPaused) return;
+        if (_isHealthy) {
+          _isHealthy = false;
+          notifyListeners();
+        }
+        debugPrint('VM health probe failed: $error');
+      } finally {
+        // Reschedule after completion, never queue concurrent Docker probes.
+        if (generation == _healthGeneration) _startHealthPolling();
       }
     });
   }
 
   void _stopHealthPolling() {
+    _healthGeneration++;
     _healthPollTimer?.cancel();
     _healthPollTimer = null;
   }

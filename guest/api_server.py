@@ -122,17 +122,13 @@ class VmExecRequest(BaseModel):
 async def health_check():
     """Health check — no auth required so the app can poll before token is verified."""
     try:
+        # Query daemon readiness and server version with one subprocess.
         result = subprocess.run(
-            ["docker", "info"],
+            ["docker", "version", "--format", "{{.Server.Version}}"],
             capture_output=True, text=True, timeout=5
         )
         runtime_ok = result.returncode == 0
-
-        ver = subprocess.run(
-            ["docker", "--version"],
-            capture_output=True, text=True, timeout=5
-        )
-        version = ver.stdout.strip() if ver.returncode == 0 else "unknown"
+        version = result.stdout.strip() if runtime_ok else "unknown"
 
         return {
             "status": "ok" if runtime_ok else "degraded",

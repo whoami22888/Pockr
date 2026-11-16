@@ -3,6 +3,7 @@ package com.example.dockerapp
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -38,10 +39,12 @@ class VmApiClient(private val token: String) {
                 .get()
                 .build()
 
-            val response = client.newCall(request).execute()
-            val success = response.isSuccessful
-            response.close()
-            success
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return false
+                val payload = response.body?.string() ?: return false
+                JsonParser.parseString(payload).asJsonObject
+                    .get("status")?.asString == "ok"
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Health check failed: ${e.message}")
             false
