@@ -16,6 +16,7 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
+from docker_health import get_docker_version
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -122,13 +123,11 @@ class VmExecRequest(BaseModel):
 async def health_check():
     """Health check — no auth required so the app can poll before token is verified."""
     try:
-        # Query daemon readiness and server version with one subprocess.
-        result = subprocess.run(
-            ["docker", "version", "--format", "{{.Server.Version}}"],
-            capture_output=True, text=True, timeout=5
-        )
-        runtime_ok = result.returncode == 0
-        version = result.stdout.strip() if runtime_ok else "unknown"
+        # Probe the Docker socket directly: avoid launching a CLI subprocess
+        # for every phone-side readiness request in the emulated VM.
+        version = get_docker_version()
+        runtime_ok = version is not None
+        version = version or "unknown"
 
         return {
             "status": "ok" if runtime_ok else "degraded",

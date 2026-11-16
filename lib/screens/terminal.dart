@@ -27,6 +27,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
   static const _quickCmds = [
     'docker ps -a',
     'docker images',
+    'python3 /bootstrap/performance_probe.py',
     'free -h',
     'df -h',
     'uname -a',

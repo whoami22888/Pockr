@@ -27,3 +27,6 @@ Criteria for claiming outperformance: same or better boot success; faster
 median guest CPU and container warm-start under the chosen profile; no
 material battery drain, memory pressure, or thermal regression. Reject
 unstable profiles. Keep Original (2 vCPU, 2048 MiB) as safe default.
+
+### Daemon health probe cost
+`/health` now queries the Docker Engine's local Unix socket `GET /version` directly using Python's standard library. This avoids spawning `docker version` on every poll while preserving version and degraded status. Verify socket-readiness on the actual VM; no host benchmark substitutes for the phone.
