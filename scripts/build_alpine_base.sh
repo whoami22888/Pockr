@@ -14,6 +14,9 @@ GUEST_DIR="${PROJECT_ROOT}/guest"
 
 mkdir -p "${ASSETS_VM_DIR}"
 
+# Every change to boot scripts, Python API or kernel invalidates old QCOW2s.
+bash "${SCRIPT_DIR}/generate_guest_version.sh"
+
 echo "=== Building Alpine 3.19 aarch64 base image ==="
 echo "Output: ${ASSETS_VM_DIR}/base.qcow2.gz"
 echo ""

@@ -8,9 +8,12 @@ SCRIPT = (ROOT / "guest/serial_rescue.sh").read_text()
 
 
 class SerialRescueBuildTest(unittest.TestCase):
-    def test_rescue_runs_in_openrc_boot_runlevel(self):
-        self.assertIn("bootmisc syslog pockr-serial", BUILD)
+    def test_rescue_runs_before_openrc_boot_and_docker(self):
+        self.assertIn("devfs dmesg pockr-serial", BUILD)
+        self.assertIn("bootmisc syslog docker-bootstrap", BUILD)
+        self.assertIn("for svc in networking docker; do", BUILD)
         self.assertIn("before networking docker-bootstrap docker", BUILD)
+        self.assertIn("POCKR_GUEST_VERSION=", BUILD)
         self.assertIn("Starting local serial rescue", BUILD)
 
     def test_console_is_not_exposed_to_network(self):

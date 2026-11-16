@@ -115,10 +115,10 @@ name="Docker Bootstrap"
 description="Start API server (Docker pre-installed in base image)"
 
 depend() {
-    # The terminal's management API must boot before Docker so a broken
-    # daemon can still be diagnosed through authenticated /vm/exec.
-    need networking
-    before docker
+    # Early management API is independent of default-runlevel networking and
+    # Docker. The loopback device is brought up by init_bootstrap.sh.
+    need localmount
+    before networking docker
 }
 
 start() {
@@ -145,6 +145,8 @@ depend() {
 }
 start() {
     ebegin "Starting local serial rescue"
+    # Print a non-secret rootfs identity BEFORE the Docker/default runlevel.
+    printf '\nPOCKR_GUEST_VERSION=%s\n' "$(cat /etc/pockr_guest_runtime_version)"
     nohup /bin/sh /bootstrap/serial_rescue.sh </dev/null >/dev/null 2>&1 &
     eend $?
 }
@@ -157,16 +159,16 @@ mkdir -p /mnt/alpine/etc/runlevels/sysinit \
          /mnt/alpine/etc/runlevels/default \
          /mnt/alpine/etc/runlevels/shutdown
 
-for svc in devfs dmesg; do
+for svc in devfs dmesg pockr-serial; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/sysinit/$svc
 done
 
-for svc in modules sysctl hostname bootmisc syslog pockr-serial; do
+# Start API before the Docker daemon can consume resources or fail to boot.
+for svc in modules sysctl hostname bootmisc syslog docker-bootstrap; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/boot/$svc
 done
 
-# API starts once networking is ready, before Docker daemon initialization.
-for svc in networking docker-bootstrap docker; do
+for svc in networking docker; do
     ln -sf /etc/init.d/$svc /mnt/alpine/etc/runlevels/default/$svc
 done
 

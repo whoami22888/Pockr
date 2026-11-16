@@ -19,6 +19,12 @@ else
 fi
 export API_TOKEN="$TOKEN"
 
+# OpenRC's default-runlevel networking has not started yet. Bring up only
+# the internal loopback device so readiness can work before Docker.
+if ! ip link set lo up; then
+    echo "ERROR: could not enable the guest loopback device"
+    exit 1
+fi
 # Start management independently: Docker can be broken while /vm/exec works.
 echo "Launching Pockr management API on guest port 7080..."
 mkdir -p /var/log

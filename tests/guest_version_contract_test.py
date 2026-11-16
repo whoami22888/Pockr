@@ -10,6 +10,12 @@ BUILD = (ROOT / 'scripts/alpine_build_inner.sh').read_text()
 
 
 class GuestVersionContractTest(unittest.TestCase):
+    def test_version_fingerprint_is_generated_from_boot_inputs(self):
+        generator = (ROOT / 'scripts/generate_guest_version.sh').read_text()
+        self.assertIn('sha256sum', generator)
+        self.assertIn('guest/init_bootstrap.sh', generator)
+        self.assertIn('guest/serial_rescue.sh', generator)
+
     def test_version_is_identical_in_guest_and_android_package(self):
         self.assertEqual(GUEST, APK)
         self.assertNotEqual(GUEST, '')
