@@ -103,6 +103,10 @@ assert record.get("stdout", "").strip() == expected, (record, expected)
 print("Guest runtime version matches the image packaged in the APK")
 PY
 
+# Reproduce the device's actual no-space-on-device failure, not only daemon
+# health. The pull runs before Docker is deliberately stopped below.
+python3 "$ROOT/tests/ci_busybox_guest_smoke.py" "http://127.0.0.1:$PORT"
+
 # The management API must remain responsive after Docker is stopped.
 # A guest that reports healthy with no usable diagnostic terminal is invalid.
 echo "Verifying the authenticated management terminal survives Docker failure"
