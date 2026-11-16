@@ -65,6 +65,8 @@ jobs:
               names = z.namelist()
               assert any(s.endswith("vm/base.qcow2.gz") or s.endswith("vm/base.qcow2") for s in names), "Base Alpine disk missing"
               assert any(s.endswith("lib/arm64-v8a/libqemu.so") for s in names), "QEMU binary missing"
+              assert any(s.endswith("lib/arm64-v8a/libqemu_img.so") for s in names), "qemu-img native binary missing"
+              assert not any(s.startswith("assets/qemu/") and not s.endswith(".gitkeep") for s in names), "Duplicate QEMU executable packaged"
               assert z.testzip() is None, "APK contains a corrupt ZIP member"
           print(f"APK structurally valid: {apk.stat().st_size:,} bytes")
           PY

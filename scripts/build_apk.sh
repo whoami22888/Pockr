@@ -96,9 +96,12 @@ cp -r /src/android/app/src/main/kotlin     android/app/src/main/
 # Android resources (network_security_config.xml, etc.) — merge into scaffold res/
 cp -r /src/android/app/src/main/res/.  android/app/src/main/res/
 
-# Assets (bootstrap scripts; qemu/ and vm/ dirs contain placeholders only)
+# Runtime loads QEMU solely from jniLibs via nativeLibraryDir.
+# Do not package duplicate 27-MiB standalone executables from assets/qemu.
+# Only the Alpine disk/kernel and API bootstrap files are runtime assets.
 mkdir -p android/app/src/main/assets
-cp -r /src/android/app/src/main/assets/.  android/app/src/main/assets/
+cp -r /src/android/app/src/main/assets/bootstrap  android/app/src/main/assets/
+cp -r /src/android/app/src/main/assets/vm  android/app/src/main/assets/
 
 # Flutter assets (logo, images)
 [ -d /src/assets ] && cp -r /src/assets/. assets/ || true

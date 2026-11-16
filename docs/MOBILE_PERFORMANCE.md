@@ -16,3 +16,6 @@ A newly generated Alpine disk contains the corrected recurring OpenRC API startu
 
 ## Faster readiness loop
 Removed the mandatory three-second pause before checking Docker and replaced repeated full `docker info` calls with the smaller server-version query. The actual speedup depends on Docker startup and must be compared on device.
+
+## APK packaging: remove unused executable duplicates
+The Flutter Android build previously included `android/app/src/main/assets/qemu/qemu-system-aarch64` (~27 MiB) and `qemu-img` (~2 MiB) alongside the actual executables Android installs under `jniLibs/arm64-v8a/libqemu.so` and `libqemu_img.so`. The app always resolves the native-library files; the standalone copies are unused. The packaging script now copies only `bootstrap` and `vm` assets. A ZIP structure assertion verifies native binaries remain and unused QEMU asset duplicates do not. Source files are retained for provenance. Compare APK bytes in exact-head CI before claiming any specific saved size.
