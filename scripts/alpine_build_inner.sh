@@ -116,12 +116,11 @@ depend() {
 }
 
 start() {
-    [ -f /bootstrap/.completed ] && return 0
-    ebegin "Running bootstrap (first boot only)"
+    # The VM's API process dies at shutdown. Start it on EVERY boot,
+    # even when a legacy /bootstrap/.completed marker already exists.
+    ebegin "Starting Docker management API"
     /bootstrap/init_bootstrap.sh
-    local ret=$?
-    [ $ret -eq 0 ] && touch /bootstrap/.completed
-    eend $ret
+    eend $?
 }
 RC
 chmod +x /mnt/alpine/etc/init.d/docker-bootstrap

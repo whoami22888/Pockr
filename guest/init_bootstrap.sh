@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bootstrap: runs on first boot inside the QEMU VM.
+# Startup: runs on every QEMU VM boot, including restarts.
 # Docker and Python are pre-installed in the base image.
 # This script reads the API token, waits for Docker, then starts the API server.
 
@@ -92,8 +92,9 @@ while [ $timeout -gt 0 ]; do
 done
 
 if [ $timeout -eq 0 ]; then
-    echo "WARNING: API server health check timed out"
+    echo "ERROR: API server health check failed"
     cat /var/log/docker-api.log 2>/dev/null | tail -20 || true
+    exit 1
 fi
 
 echo "=== Bootstrap Complete ==="
