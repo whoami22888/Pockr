@@ -45,7 +45,8 @@ class BootstrapServiceTest(unittest.TestCase):
         self.assertIn("exit 1", code)
 
     def test_management_service_does_not_depend_on_docker(self):
-        self.assertIn("need networking", service_template)
+        self.assertIn("need localmount", service_template)
+        self.assertIn("before networking docker", service_template)
         self.assertIn("before docker", service_template)
         self.assertNotIn("need docker", service_template)
 
